@@ -3,7 +3,7 @@ Gale-Shapley algorithm for Stable Matching Problem (SMP) between two equally siz
 Responders
 """
 from itertools import count
-from typing import List, Dict, Tuple, Optional
+from typing import List, Set, Dict, Tuple, Optional
 
 from Deferred_Acceptance_Entity import Responder, Proposer, Proposal
 
@@ -12,12 +12,19 @@ class Market:
     def __init__(self):
         self.uuid_proposer = count(1)
         self.uuid_responder = count(1001)
-        self.proposer_uuid_dict = dict()
-        self.responder_uuid_dict = dict()
-        self.unmatched_proposer_uuid = set()
+        self.proposer_uuid_dict: Dict[int, Proposer] = dict()
+        self.responder_uuid_dict: Dict[int, Responder] = dict()
+        self.unmatched_proposer_uuid: Set[int] = set()
         self.count_proposer = 0
         self.count_responder = 0
         self.proposal_count = 0
+        self.is_strict_preference = True
+
+    def strict_preference_only(self) -> bool:
+        """
+        :return: whether weak preference has been registered for any Proposer or Responder
+        """
+        return self.is_strict_preference
 
     def register_proposer(self, name: str = None, uuid: int = None) -> int:
         """
@@ -32,13 +39,22 @@ class Market:
         self.count_proposer += 1
         return new_uuid
 
-    def register_proposer_proposal_order(self, uuid: int, proposal_order: List[int]) -> None:
+    def register_proposer_strict_preference(self, uuid: int, strict_preference: List[int]) -> None:
         """
-        Register proposal order of Proposer proposer_uuid
+        Compute proposal order of Proposer proposer_uuid out of strict preference
         :param uuid: proposer_uuid
-        :param proposal_order: list of Acceptor proposer_uuid stating proposal order
+        :param strict_preference: list of Acceptor proposer_uuid stating proposal order
         """
-        self.proposer_uuid_dict[uuid].set_propose_order(proposal_order)
+        self.proposer_uuid_dict[uuid].set_strict_preference(strict_preference)
+
+    def register_proposer_weak_preference(self, uuid: int, weak_preference: List[List[int]]) -> None:
+        """
+        Compute proposal order of Proposer proposer_uuid out of weak preference,
+        randomly break tie among indifferent options
+        :param uuid: proposer_uuid
+        :param weak_preference: list of Acceptor proposer_uuid stating proposal order
+        """
+        self.is_strict_preference = self.proposer_uuid_dict[uuid].set_weak_preference(weak_preference)
 
     def proposer_name_lookup_from_uuid(self) -> Dict[str, int]:
         """
@@ -64,6 +80,14 @@ class Market:
         :param strict_preference: list of Proposer uuids representing strict preference over them
         """
         self.responder_uuid_dict[uuid].set_strict_preference(strict_preference)
+
+    def register_responder_weak_preference(self, uuid: int, weak_preference: List[List[int]]) -> None:
+        """
+        first come first match among indifferent options
+        :param uuid: proposer_uuid for Responder
+        :param weak_preference: list of Proposer uuids representing weak preference over them
+        """
+        self.is_strict_preference = self.responder_uuid_dict[uuid].set_weak_preference(weak_preference)
 
     def responder_name_lookup_from_uuid(self) -> Dict[str, int]:
         """
@@ -121,10 +145,10 @@ class Market:
         want_to_propose = self.proposer_uuid_dict[proposer_uuid]
         
         if want_to_propose.matched_to is not None:
-            return None, proposer_uuid, None, None
+            return Proposal(None, proposer_uuid, None, None)
         next_propose_to = want_to_propose.propose_next()
         if next_propose_to == Proposer.NO_NEXT_PROPOSAL:
-            return None, proposer_uuid, None, None
+            return Proposal(None, proposer_uuid, None, None)
 
         self.proposal_count += 1
         rejection_uuid = self.responder_uuid_dict[next_propose_to].respond_to_proposal(proposer_uuid)
@@ -143,9 +167,9 @@ class Market:
 
     def one_round_simultaneous_proposals(self):
         """
-        every currently unmatched proposer simultaneously make their next proposal
-        :return: list of (self.proposal_count, want_to_propose_uuid, next_propose_to, rejection_uuid) describing current
-                round proposals, use interpret_proposal_outcome() to translate the output
+        all currently unmatched proposer simultaneously make their next proposal
+        :return: list of Proposal(self.proposal_count, want_to_propose_uuid, next_propose_to, rejection_uuid)
+                describing proposals in current round; use interpret_proposal_outcome() to translate the output
         """
         proposals_in_current_round = []
         next_round_proposer_uuid = set()

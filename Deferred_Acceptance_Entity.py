@@ -3,7 +3,7 @@ Gale-Shapley algorithm for Stable Matching Problem (SMP) between two equally siz
 Responders
 """
 from collections import namedtuple
-from typing import List, Set, Optional
+from typing import List, Optional
 
 
 class Proposer:
@@ -18,15 +18,23 @@ class Proposer:
         self.name = name if name else "Proposer " + str(uuid)
         self.matched_to = None
         self.proposal_order = []
-        self.proposed_to = -1
+        self.last_proposed_to = -1
 
-    def set_propose_order(self, proposal_order: List[int]) -> None:
+    def set_strict_preference(self, strict_preference: List[int]) -> None:
         """
-        :param proposal_order: list of proposer_uuid for Responders, denoting Total Order over Responders for current proposer
+        :param strict_preference: proposer make offer from most preferred to least preferred
         """
-        self.proposal_order = proposal_order
+        self.proposal_order = strict_preference
 
-    def validate(self, proposer_list: Set[int], responder_list: Set[int]) -> bool:
+    def set_weak_preference(self, weak_preference: List[List[int]]) -> bool:
+        """
+        :param weak_preference: list of sets of uuids, indifferent among uuids in the same rank_set, randomly break ties
+        :return: return True if proposer shows strict preference among Responders
+        """
+        self.proposal_order = [responder_uuid for rank_set in weak_preference for responder_uuid in rank_set]
+        return all(len(rank_set) <= 1 for rank_set in weak_preference)
+
+    def validate(self, proposer_list: List[int], responder_list: List[int]) -> bool:
         """
         :param proposer_list: set of proposer_uuid of Proposers
         :param responder_list: set of proposer_uuid of Responders
@@ -39,15 +47,15 @@ class Proposer:
         """
         :return: proposer_uuid for next Responder to propose to
         """
-        if not self.proposal_order or self.proposed_to >= len(self.proposal_order) - 1:
+        if not self.proposal_order or self.last_proposed_to >= len(self.proposal_order) - 1:
             return self.NO_NEXT_PROPOSAL
         else:
-            self.proposed_to += 1
-            return self.proposal_order[self.proposed_to]
+            self.last_proposed_to += 1
+            return self.proposal_order[self.last_proposed_to]
 
-    def register_response(self, is_acceptance: bool):
+    def register_response(self, is_acceptance: bool = True):
         if is_acceptance:
-            self.matched_to = self.proposal_order[self.proposed_to]
+            self.matched_to = self.proposal_order[self.last_proposed_to]
         else:
             self.matched_to = None
 
@@ -70,16 +78,17 @@ class Responder:
         self.preference_order = {uuid: preference_rank
                                  for preference_rank, uuid in enumerate(reversed(strict_preference))}
 
-    def __set_weak_preference(self, weak_preference: List[Set[int]]) -> None:
+    def set_weak_preference(self, weak_preference: List[List[int]]) -> bool:
         """
         :param weak_preference: list of sets of uuids, indifferent among uuids in the same rank_set
-        :return:
+        :return: return True if proposer shows strict preference among Responders
         """
         self.preference_order = {uuid: preference_rank
                                  for preference_rank, rank_set in enumerate(reversed(weak_preference))
                                  for uuid in rank_set}
+        return all(len(rank_set) <= 1 for rank_set in weak_preference)
 
-    def validate(self, proposer_list: Set[int], responder_list: Set[int]) -> bool:
+    def validate(self, proposer_list: List[int], responder_list: List[int]) -> bool:
         """
         :param proposer_list: set of proposer_uuid of Proposers
         :param responder_list: set of proposer_uuid of Responders
